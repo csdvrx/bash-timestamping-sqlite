@@ -1,0 +1,5 @@
+# ~/.bash_logout
+
+## Close the session
+
+sqlite3 "$SQLITEFILE" "UPDATE sessions SET logout = current_timestamp WHERE sid ='${SID//\'/''}';"

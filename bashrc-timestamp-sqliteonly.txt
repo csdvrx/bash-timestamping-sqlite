@@ -1,0 +1,56 @@
+PS1='`RETURN=$?; sqliteaddstop "$RETURN" 2>/dev/null ; if [ $RETURN != 0 ]; then \
+printf "\e[3m\e[2m\e[31m#!%03d\e[39m\e[49m" $RETURN ; else \
+printf "\e[3m\e[2m\e[39m#    \e[49m" ; fi ; \
+printf "\e[39m\e[12m[\D{%Y-%m-%d_%H:%M:%S}\e7\e[20C]\e[1m (\u@\h:\w)\e[22m\n\[\e[10m\e[3m\e[2m\]#\[\e[0m\] "`'
+# WARNING: for multiline prompts, \n must be outside the \[ \] non-printable indicator
+
+## SQLite logging
+function sqliteaddstart {
+  [[ $BASH_COMMAND =~ "^logout$" ]] && return
+
+  # get the command from history then strip the command number
+  local numandwhat="$(history 1)"
+  # remove leading spaces
+  numandwhat="${numandwhat#"${numandwhat%%[![:space:]]*}"}"
+  # read the sequence number
+  local num="${numandwhat%%' '*}"
+  # to avoid having to unset the trap in PROMPT_COMMAND and to deal with pipes
+  [[ $SEEN -eq $num ]] && return
+  # remove the number and the leading spaces
+  numandwhat="${numandwhat#*' '}"
+  what="${numandwhat#"${numandwhat%%[![:space:]]*}"}"
+
+  # avoid adding empty commands
+  [[ -z $what ]] && return
+  # IGNORE to avoid failing the UNIQUE constaint on pipes
+  sqlite3 "$SQLITEFILE" "
+   INSERT OR IGNORE INTO commands (ssid, seq, what, path) VALUES (
+    '${SID//\'/''}', '${num//\'/''}', '${what//\'/''}', '${PWD//\'/''}'
+    );"
+
+# PROMPT_COMMAND contains several commands, only run once to optimize
+  export SEEN=$num
+}
+
+# upon starting a command, log it
+trap sqliteaddstart DEBUG
+
+# once done, complete with the error code and stop timestamp through PROMPT_COMMAND
+function sqliteaddstop {
+ local ERR=$1
+ [[ -z $ERR ]] && ERR=0
+ # get the command from history then strip the command number
+ local numandwhat="$(history 1)"
+ # remove leading spaces
+ numandwhat="${numandwhat#"${numandwhat%%[![:space:]]*}"}"
+ # read the sequence number
+ local num="${numandwhat%%' '*}"
+ # don't do anything right after login
+ [[ $num <1 ]] && return
+ sqlite3 "$SQLITEFILE" "
+   UPDATE commands 
+    SET err='${ERR//\'/''}', stop=current_timestamp
+    WHERE seq =${num//\'/''} AND ssid =${SID//\'/''}
+   ;"
+ }
+

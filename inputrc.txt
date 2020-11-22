@@ -1,0 +1,169 @@
+########## Generic setup
+
+# Send & Receive 8 bit chars
+set meta-flag on
+set convert-meta off
+set input-meta on 
+set output-meta on
+
+# protect against copy-paste
+set enable-bracketed-paste on
+
+# No case
+set completion-ignore-case on
+
+# Disable beep
+set bell-style visible
+
+# Do not wrap command line
+set horizontal-scroll-mode on
+
+# Tag edited commandlines
+set mark-modified-lines on
+
+# Tab will also work on ~ (homedirs)
+set expand-tilde on
+
+# Completions which are symbolic links to directories get a slash ending
+#set mark-symlinked-directories on
+
+# Use color for completion
+set colored-stats on
+
+# Avoid cluttering the screen when auto completing in a directory in which a
+# lot of files have a long common prefix: If the common prefix has more than 3
+# characters, they are replaced by ellipsis
+set completion-prefix-display-length 15
+
+# This line sets every completion which is a symbolic link to a directory to have a slash appended
+set mark-symlinked-directories on
+
+# completions are appended by characters indicating file types reported by stat
+set visible-stats on
+
+########## Key mappings
+
+### Backward-kill-word is ctrl-w, while kill-word is alt|esc-d, so map Ctrl-i
+# this makes ctrl-k|u and ctrl-w|s very close
+"\C-s": kill-word
+
+### Delete to the right will be remapped to Delete
+"\e[3~": delete-char
+# keypad on .
+#"\eOn": delete-char
+# Special case for VT100 (borks backspace -> make it conditionnal)
+$if term=vt100
+"\C-?": delete-char
+$endif
+
+### Delete to left will be remapped to Backspace 
+"\C-?": backward-delete-char
+# keypad on 5
+#"\eOu": backward-delete-char
+# Special case for VT100 (borks backspace -> make it conditionnal)
+$if term=vt100
+"\C-H" : backward-delete-char
+$endif
+
+### Undo will be remapped to cmd-z in OSX
+## OSX: Remap with ControllerMate Cmd-y to Ctrl-_
+### Undo will be remapped to alt-Z in Linux
+"\M-Z" : undo
+
+### Redo will be remapped to cmd-y in OSX
+## OSX: Remap with ControllerMate Cmd-y to Esc-r
+### Redo will be remapped to alt-Y in Linux
+"\M-Y" : revert-line
+
+### Paste buffer (alternate-use : overwrite-mode) will be remapped to Insert
+## OSX: Remap with ControllerMate Insert to Ctrl-y
+"\e[2~": yank
+# keypad on 0
+#"\eOp": yank
+
+### Line cuts will be remapped to cmd-remove in OSX, shift-remove in Linux
+## OSX: Remap with ControllerMate Cmd+Delete to Ctrl-k
+"\e[3;2~": kill-line
+## OSX: Remap with Controllermate Cmd+Backspace to Ctrl-u
+"\e[9;2~": backward-kill-line
+
+### Word cuts will be remapped to opt-remove in OSX, alt-remove in Linux
+## OSX: Remap Alt+Delete with ControllerMate to Ctrl-w
+"\e[3;3~": kill-word
+## OSX: Remap Alt+Backspace with ControllerMate to Esc-d
+"\e[9;3~": backward-kill-word
+
+# For word and line cuts, in linux-Console, use Fxx strings for mappings
+# keys to sequences if needed, and in X, change the xterms own mapping
+# in your .Xresources:
+#*VT100.Translations:   #override  Ctrl  <Key> Delete: string("0x15") \n
+# 15 is 21 in hexa, which means u (the 21st letter)
+# 0B is 11 in hexa, which means k (the 11 letter)
+# 17 is 23 in hexa, which means w (the 23rd letter)
+# 18 is 24 in hexa, which means x (the 24rd letter)
+
+### Beginning and end of edit line will be remapped to Home & End
+## OSX: Shift+Home and Shift+End map by default to these rxvt/xterm entries
+# linux-console
+"\e[1~": beginning-of-line
+"\e[4~": end-of-line
+# xterm
+"\e[H": beginning-of-line
+"\e[F": end-of-line
+# rxvt-original
+"\e[7~": beginning-of-line
+"\e[8~": end-of-line
+# keypad-alternative on 1 and 7
+#"\eOw": beginning-of-line
+#"\eOq": end-of-line
+# Nxterm
+#"\e[\C-@": beginning-of-line
+#"\e[e": end-of-line
+### OSX shortcut emulation :
+# Cmd default shortcut is handled by Terminal and you can add Alt+PageUp
+# & Alt+PageDown to buffer scroll instead
+
+### Search command history will be remapped to PageUp & PageDown
+# linux-console and rxvt
+"\e[5~": reverse-search-history
+"\e[6~": forward-search-history
+# xterm
+"\eOH": reverse-search-history
+"\eOF": forward-search-history
+
+### OSX shortcut emulation:
+# You should hardcode Esc[5~ Esc[6~ in Terminal/Settings which
+# by default are mapped to buffer scroll, and remap Shift+PageUp &
+# Shift+PageDown to buffer scroll instead
+# Besides that, Cmd default shortcut is handled by Terminal and
+# you can add Alt+PageUp & Alt+PageDown to buffer scroll too
+
+### History navigation will be remapped to vertical arrows
+"\e[A": previous-history
+"\e[B": next-history
+
+### Character navigation will be remapped to horizontal arrows
+"\e[C": forward-char
+"\e[D": backward-char
+
+### History start & end will be remapped to Ctrl + vertical arrows
+# Default
+"\e[1;5A": beginning-of-history
+"\e[1;5B": end-of-history
+## OSX : You must define Ctrl-Up and Ctrl-Down sequence in Terminal Settings
+"\eO5A": beginning-of-history
+"\eO5B": end-of-history
+# xterm original
+"\e[5A": beginning-of-history
+"\e[5B": end-of-history
+
+### Word navigation will be remapped to Ctrl + horizontal arrows
+# Default
+"\e[1;5C": forward-word
+"\e[1;5D": backward-word
+## OSX
+"\eO5C": forward-word
+"\eO5D": backward-word
+# xterm original
+"\e[5C": forward-word
+"\e[5D": backward-word
