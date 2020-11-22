@@ -1,0 +1,21 @@
+shopt -s checkwinsize
+
+# Function to detect the bottom of the screen
+function __notbottom() {
+  local pos
+  IFS='[;' read -p $'\e[6n' -d R -a pos -rs || echo "failed with error: $? ; ${pos[*]}"
+  CURLN=$((${pos[1]} +1 ))
+  if [ "$CURLN" -ge "$LINES" ] ; then return -1 ; fi
+}
+
+# Colored multiline prompt with the time the input began
+PS1='`RETURN=$?; if [ $RETURN != 0 ]; then \
+printf "\e[3m\e[2m\e[31m#!%03d\e[39m\e[49m" $RETURN ; else \
+printf "\e[3m\e[2m\e[39m#    \e[49m" ; fi ; \
+printf "\e[39m\e[12m[\D{%Y-%m-%d_%H:%M:%S}\e7\e[20C]\e[1m (\u@\h:\w)\e[22m\n\[\e[10m\e[3m\e[2m\]#\[\e[0m\] "`'
+
+# To add when the input stopped
+PROMPT_COMMAND='__notbottom && export PS0="\e8\r\e[0m\e[39m\e[2m\e[3m\e[5C\e[0m\e[20C\e[12m\e[2m\e[3m\D{,%Y-%m-%d_%H:%M:%S}\e[0m\e[2E" \
+                       || export PS0="\e8\e[2A\r\e[0m\e[39m\e[2m\e[3m\e[5C\e[0m\e[20C\e[12m\e[2m\e[3m\D{,%Y-%m-%d_%H:%M:%S}\e[0m\e[2E" ; \
+ printf "⏎%$((COLUMNS-1))s\\r\\033[K"'
+

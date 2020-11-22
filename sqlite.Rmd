@@ -1,0 +1,259 @@
+> sqlite database for logging commands
+
+## BASICS
+
+All the commands you type including metadata such as the path, the start timestamp, the stop timestamp and the error code go into a sqlite database file named ~/.bash_history-$HOST.db to used facilitate syncing of multiple hosts into one central location (by rsync, onedrive, dropbox, etc)
+
+The database can either complement (by keeping HISTSIZE small) or fully replace (if HISTSIZE is set to 1) logging to .bash_history.
+
+In any case, comments from the current session will be kept in memory, so the effect on your usual bash use should be minimal: both up and down arrows to navigate the history, and Ctrl-R to reverse-search the history will work ask usual.
+
+## USES
+
+This allows to to quickly see for example what are the commands you ran into the sessions still opened:
+
+```{text}
+sqlite3 ~/.bash_history-$HOST.db "
+SELECT start, stop, seq, err, path, what FROM commands WHERE stop is NULL GROUP BY ssid,seq  ORDER BY ssid,seq;
+"
+```
+
+Or the last 10 commands ran on other bash sessions:
+
+```{text}
+sqlite3 ~/.bash_history-$HOST.db "
+sqlite3 /home/Charlotte/.bash_history-go.db SELECT start, ssid, what FROM commands WHERE ssid != $SID ORDER BY start,ssid,seq LIMIT 10;
+"
+```
+
+## DESIGN
+
+This is not a wtmp replacement: so the remote IP, tty, or the session login are not logged, as this would be redundant with wtmp.
+
+Instead, each bash command has a CID, and is attached to a session SID.
+
+A foreign key constraint is added, to be able to delete all the commands from a given session by deleting the SID.
+
+At login, the tables are created if they don't exist, and SID is exported if it's not set yet.  This is done to avoid discontinuities, otherwise, every time you open a new bash inside vim, the SID would be updated and exported!
+
+To handle the sessions, the bash_login contains *blocking* content, as we *NEED* $SID from the first command.
+
+Since this part is blocking, it is kept to a minimum to avoid slowing down opening new shells on msys2 (where fork is dog slow): we don't even call 'date', as sqlite defaults can take care of populating the timestamps automatically.
+
+If you like speed and are stuck on Windows/msys2, uname could be added in a separate non blocking (background) update to only run 1 blocking command - but this may be premature optimisation!
+
+The general principle is only to keep the bash_login as small as reasonably possible, so that one extra command will not make much difference.
+
+```{text}
+## If not running interactively, do not do anything more
+[[ $- != *i* ]] && return
+
+## Otherwise, do SQLite logging, starting with this new session: get kernel info
+UNAME=$(uname -a)
+export UNAME
+
+## Facilitate upload to a central repository
+SQLITEFILE="$HOME/.bash_history-$HOST.db"
+export SQLITEFILE
+
+## Then only update the session ID if not already set to avoid discontinuities
+[[ -z $SID ]] && export SID=$(sqlite3 "$SQLITEFILE" "
+
+-- In case the files are deployed on a new host
+CREATE TABLE IF NOT EXISTS sessions (   -- table of the sessions
+sid INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+login TIMESTAMP NOT NULL DEFAULT current_timestamp,
+                                        -- bash_login timestamp
+logout TIMESTAMP NULL,                  -- bash_logout timestamp
+user TEXT,                              -- username to merge different databases later
+uname TEXT                              -- complete kernel version
+);
+
+CREATE TABLE IF NOT EXISTS commands (   -- table of the commands
+cid INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, -- pk autoincremented
+ssid INTEGER NOT NULL,                  -- foreign key
+seq INTEGER NOT NULL,                   -- cid order inside a ssid, to deduplicate pipes
+start TIMESTAMP NOT NULL DEFAULT current_timestamp,
+                                        -- execution begins when enter is pressed
+stop TIMESTAMP NULL,                    -- ends when prompt shown again, empty if SIGINT
+err INTEGER NULL,                       -- eventual returned code
+what TEXT,                              -- command line as it was typed
+path TEXT,                              -- context where the command line was typed
+FOREIGN KEY (ssid) REFERENCES sessions(sid) ON DELETE CASCADE,
+UNIQUE (ssid, seq)                      -- constraint to avoid dupes
+);
+
+-- for the new session
+INSERT INTO sessions (user,uname) VALUES (
+ '${USER//\'/''}', '${UNAME//\'/''}'
+ );
+
+-- for the conditional export SID
+SELECT max(sid) from sessions;
+")
+```
+
+## SESSION
+
+In the code above, 1) when starting bash interactively and 2) if there is no running session yet ($SID is empty), a new session is added by automatically increasing sid due to the insertion of (user,uname)- this also automatically sets the session start timestamp.
+
+At the end, the select allows for this new SID to be exported: $SID will then be used as the master context for each command typed in this bash session.
+
+This way, we do not have to use say the bash current process ID from $PPID, which could create conflicts by rollover or by chance.
+
+Still, just like $PPID, $SID does allow grouping by bash session each command entered in each terminal, instead of having them mashed and merged alltogether in your bash_history.
+
+On bash_logout, the session closing time is added:
+
+```{text}
+sqlite3 "$SQLITEFILE" "UPDATE sessions SET logout = current_timestamp WHERE sid ='${SID//\'/''}';"
+```
+This avoids using a trap on exit, which can be used for better purposes, like in scripts!
+
+## COMMAND
+
+In bashrc, a DEBUG trap is used to log each command and timestamp its starting point: the sqliteaddstart function is called whenever a new command starts.
+
+There are several potential issues here, mostly for pipes: a|b|c will be trapped 3 times and could add 3 redundant lines.
+
+sqliteaddstart uses "history 1" instead of $BASH_COMMAND to avoid splitting pipe chains into their individual commands, something you can see for yourself with:
+
+```{text}
+function testcmd { echo -n "# #$HISTCMD " ; echo -n "[$BASH_COMMAND], h="; history 1;}
+trap testcmd DEBUG
+```
+Then if you run a pipe, you understand why that matters:
+
+```{text}
+echo 1|grep 1 |grep -v 2|grep -v 3
+# #1 [echo 1], h=   27  echo 1|grep 1 |grep -v 2|grep -v 3
+# #1 [grep 1], h=   27  echo 1|grep 1 |grep -v 2|grep -v 3
+# #1 [grep -v 2], h=   27  echo 1|grep 1 |grep -v 2|grep -v 3
+# #1 [grep -v 3], h=   27  echo 1|grep 1 |grep -v 2|grep -v 3
+```
+
+If that is not clear, a good tutorial for the DEBUG trap is available on https://jichu4n.com/posts/debug-trap-and-prompt_command-in-bash/
+
+#### PIPES
+
+There are no perfect solutions unless we ramp up complexity to an unacceptable level.
+
+Let's start with what can't be used "out of the box" without thinking long and hard about the implications:
+
+ - $HISTCMD (1 in the example above), because it is not robust to the function context. Also, as explained in bash manpage:
+> "If HISTCMD is unset, it loses its special properties, even if it is subsequently reset"
+
+ - the prefix from history (27 in the example above), since exporting new values of HISTSIZE changes the number: it may not be unique!!!
+
+A potential solution would be to insert blindly into the sqlite database, either with INSERT OR IGNORE, or a UNIQUE constraint on (ssid,cid,what,start) if for some reason we care about dupes: if all that matches, it means we are trying to insert again something we did before.
+
+However, it could be due to a pipe *OR* repeating commands. For repeated command ("cd ..", then "cd .." again 10 seconds later), the difference in time when the command is started should be enough to keep logging, even with HISTCMD unset. If not, the UNIQUE constraint could be expanded to (ssid,cid,what,path,start) - but that's starting to get long, and it may degrade performance.
+
+Another possibility would be a TRIGGER on INSERT that uses some algorithm with the command currently entered, the previous commands, and maybe the time or the path - some arcane rules could decide that the same commands within a sliding 10 seconds window should not be inserted because they are dupes - then again, what about pipes where individual commands take a long time?
+
+An alternative would be to insert nothing to get the cid for a blank record then populate the fields of this record. However, in case of a pipe for example, we would then have to do INSERT OR IGNORE (to keep the start timestamping of the first pipe command), or INSERT OR UPDATE (to update the start date to the default value now at the start of the final pipe command)
+
+It seems needlessly complicated. Do we really want to have to build a SQLite database with conditional inserts, triggers, complex unique constraints, arcane deduplication heuristics and all that?
+
+The goal here is to have a simple and robust solution, so to me, the answer is no. If you disagree, submit a patch, but I fear you are not understanding the scope of the problem: a dedicated user can simply remove the DEBUG trap to stop the logging.
+
+Therefore, even if tweaking HISTSIZE seems close to sabotage, we have to trust the user knows what's being done. There might even be good reasons to do that. If the logging fails... so what?
+
+The prefix from history is thus stored as seq, with a simple constraint on (ssid, seq) being unique to at least avoid corrupting existing logs when the user tweaks HISTSIZE.
+
+So the bashrc contains:
+
+```{text}
+function sqliteaddstart {
+  # don't slow down logout
+  [[ $BASH_COMMAND =~ "^logout$" ]] && return
+
+  # get the command from history then strip the command number
+  local numandwhat="$(history 1)"
+  # remove leading spaces
+  numandwhat="${numandwhat#"${numandwhat%%[![:space:]]*}"}"
+  # read the sequence number
+  local num="${numandwhat%%' '*}"
+  # to avoid having to unset the trap in PROMPT_COMMAND and to deal with pipes
+  [[ $SEEN -eq $num ]] && return
+  # remove the number and the leading spaces
+  numandwhat="${numandwhat#*' '}"
+  what="${numandwhat#"${numandwhat%%[![:space:]]*}"}"
+
+  # avoid logging empty commands
+  if [[ -z $what ]]; then return; fi
+
+  # IGNORE to avoid failing the UNIQUE
+  sqlite3 "$SQLITEFILE" "
+   INSERT OR IGNORE INTO commands (ssid, seq, what, path) VALUES (
+  '${SID//\'/''}', '${HISTCMD//\'/''}', '${what//\'/''}', '${PWD//\'/''}',
+   );"
+   
+  # PROMPT_COMMAND contains several commands, only run once to optimize
+  export SEEN=$num
+}
+
+# upon starting a command, log it
+trap sqliteaddstart DEBUG
+```
+
+This is a good beginning, but only half the problem: this trap *CAN'T* give when the command ends, unless you make some heroic assumptions such as supposing typing commands is immediate and instant (!!)
+
+To avoid wrong statistics when a prompt is left idle for a while, an update is made by a function that's called when the command ends, as proxied by when the next prompt is displayed: the function is thus started by PROMPT_COMMAND
+
+It will populate both the stop time entry and the error code obtained:
+```{text}
+# once done, complete with the error code and stop timestamp through PROMPT_COMMAND
+function sqliteaddstop {
+ local ERR=$1
+ [[ -z $ERR ]] && ERR=0
+ # get the command from history then strip the command number
+ local numandwhat="$(history 1)"
+ # remove leading spaces
+ numandwhat="${numandwhat#"${numandwhat%%[![:space:]]*}"}"
+ # read the sequence number
+ local num="${numandwhat%%' '*}"
+ # don't do anything right after login
+ [[ $num <1 ]] && return
+ sqlite3 "$SQLITEFILE" "
+   UPDATE commands
+    SET err='${ERR//\'/''}', stop=current_timestamp
+    WHERE seq =${num//\'/''} AND ssid =${SID//\'/''}
+   ;"
+ }
+```
+
+## DESIGN
+
+Adding commands was simplified as much as possible, following (https://news.ycombinator.com/item?id=10695305)[saurik example which makes a creative use of debug and exit traps]: this allows to leave PROMPT_COMMAND mostly alone.
+
+The trap design used by saurik is not perfect: he recognizes pipes only work because the same entry can be overwritten, but this saves a lot of complexity, which I believe is more important than completion.
+
+However, we can't do without PROMPT_COMMAND to get the stop timestamp. A function call seems like a small price to pay, especally given the complex but beautiful prompts already displayed!
+
+Most other solutions I've found seem needlessly complicated or even dangerous:
+
+ - you (https://github.com/barabo/advanced-shell-history)[should not have to draw a sequence diagram to understand how logging works].
+
+ - you (https://github.com/andmarios/bashistdb)[should not need special initialization commands or Go]
+
+ - you (https://pastebin.com/zJkPW79C)[should not need to emulate zsh preexec] by (https://github.com/rcaloras/bash-preexec)[importing other scripts manually], or even worse (https://github.com/thenewwazoo/bash-history-sqlite/blob/master/bash-history-sqlite.sh)[by automatic execution of unknown code through wget]
+
+ - you (https://www.outcoldman.com/en/archive/2017/07/19/dbhist/)[should not use so many pipes as to slow down to a crawl on msys2]
+
+The design I used may be overkill, but given the various horrors seen above, don't you want to play it safe?
+
+If you find this approach too complicated, the next best is https://github.com/jichu4n/bash-command-timer, but it feels dated: in 2015, bash-preexec was necessary. Not anymore!
+
+### CONCERNS
+
+If you want to fork and improve this, some food for your thoughts:
+
+ - On remote hosts, to avoid giving intruder pointers to interesting things, you may want to set HISTFILESIZE=0 and only depend on the sqlite database for your history.
+
+ - Of course, this assumes an intruder will be familiar with sqlite, a risky bet at best. It may be better to either 1) copy and remove the database upon logout, or 2) encrypt additions to the database with a public key.
+
+ - If the file is not kept locally but copied and deleted, it should be timestamped with at least the creation date (.bash_history-$hostname-$date.db), and eventually some random salt, in case multiple bash are started at the very same second.
+
+ - On the remote server, the file should go to a specific directory, watched by a daemon, with the files moved to another directory, so a local intruder couldn't overwrite the database by uploading an empty file.
+

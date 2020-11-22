@@ -1,0 +1,196 @@
+# ~/.bashrc: executed by bash(1) for non-login shells.
+
+### Terminal tweaks
+
+## If not running interactively, don't do anything
+[ -z "$PS1" ] && return
+
+## For debugging scripts, use bash -x, then for each line of a script show:
+export PS4='# [\D{%Y-%m-%d_%H:%M:%S}] ${BASH_SOURCE} line ${LINENO} (in: ${FUNCNAME[0]})\n\r# '
+
+## Protect against ^O exec attack on bracketed paste handling
+bind 'set enable-bracketed-paste on'
+bind -r "\C-o"
+
+## After each command check window size to update LINES and COLUMNS if needed
+shopt -s checkwinsize
+
+## Treat the same way echo \n and \013 
+shopt -s xpg_echo
+
+## Complex completion
+#shopt -s extglob progcomp
+#complete -d pushd
+#complete -d rmdir
+#complete -d cd
+
+## Remap ctrl-c to ctrl-x to copy/paste with ctrl-c and ctrl-v, and disable ctrl-s/ctrl-q
+stty intr ^X stop undef start undef rprnt undef discard undef swtch undef -ixoff -ixon
+# The above doesn't show ^S,^Q,^R and ^O anymore in stty -a
+# rprnt is an old function to reprint line on ^R, swtch is another old function of ^Z
+# sigquit ctrl-\ is partially supported by windows-terminal
+# ^R is mapped to reverse search, ^S to forward-kill-word
+# the following are free for bash/inputrc: ^Q ^O ; keep for GUIs: ^space ^enter
+
+## Speed up dircolors processing by avoiding stat
+#eval $(cat $HOME/.dircolors.solarized_256 | perl -pe 's/^((CAP|S[ET]|O[TR]|M|E)\w+).*/$1 00/' | SHELL=/usr/bin/bash dircolors -)
+
+### Functions
+
+## Function to protect sixels sequence if not using a proper sixel-aware multiplexer
+# Like old versions of tmux which requires unrecognized OSC sequences to be wrapped
+# with:
+# DCS tmux; <sequence> ST
+#  also all ESCs in <sequence> to be replaced with ESC ESC.
+#  also tmux only accepts ESC backslash for ST.
+# Better use a sixel-tmux than having to do:
+#       cat image.six | __tmux_guard()
+# This is because even with __tmux_guard, regular a tmux sometimes eats text
+# when data outstanding gets too large (width * height * 8 bytes)
+__tmux_guard() { printf "\u1bPtmux;" ; sed 's:\x1b:\x1b\x1b:g' ; printf "\u1b\\"; }
+
+## Function to detect the bottom of the screen without stty
+function __notbottom() {
+  local pos
+  # Detect the cursor position
+  IFS='[;' read -p $'\e[6n' -d R -a pos -rs || echo "failed with error: $? ; ${pos[*]}"
+  # add one to the 0-initiated x-pos (+ no offset), to give an error code at the bottom
+  CURLN=$((${pos[1]} +1 ))
+  if [ "$CURLN" -ge "$LINES" ] ; then return -1 ; fi
+}
+
+## Function for SQLite logging by DEBUG trap
+function sqliteaddstart {
+  [[ $BASH_COMMAND =~ "^logout$" ]] && return
+
+  # get the command from history then strip the command number
+  local numandwhat="$(history 1)"
+  # remove leading spaces
+  numandwhat="${numandwhat#"${numandwhat%%[![:space:]]*}"}"
+  # read the sequence number
+  local num="${numandwhat%%' '*}"
+  # to avoid having to unset the trap in PROMPT_COMMAND and to deal with pipes
+  [[ $SEEN -eq $num ]] && return
+  # remove the number and the leading spaces
+  numandwhat="${numandwhat#*' '}"
+  what="${numandwhat#"${numandwhat%%[![:space:]]*}"}"
+
+  # avoid adding empty commands
+  [[ -z $what ]] && return
+  # IGNORE to avoid failing the UNIQUE constaint on pipes
+  sqlite3 "$SQLITEFILE" "
+   INSERT OR IGNORE INTO commands (ssid, seq, what, path) VALUES (
+    '${SID//\'/''}', '${num//\'/''}', '${what//\'/''}', '${PWD//\'/''}'
+    );"
+
+# PROMPT_COMMAND contains several commands, only run once to optimize
+  export SEEN=$num
+}
+
+# SQLite logging:
+
+# upon starting a command, log it
+trap sqliteaddstart DEBUG
+
+# once done, complete with the error code and stop timestamp through PROMPT_COMMAND
+function sqliteaddstop {
+ local ERR=$1
+ [[ -z $ERR ]] && ERR=0
+ # get the command from history then strip the command number
+ local numandwhat="$(history 1)"
+ # remove leading spaces
+ numandwhat="${numandwhat#"${numandwhat%%[![:space:]]*}"}"
+ # read the sequence number
+ local num="${numandwhat%%' '*}"
+ # don't do anything right after login
+ [[ $num <1 ]] && return
+ sqlite3 "$SQLITEFILE" "
+   UPDATE commands 
+    SET err='${ERR//\'/''}', stop=current_timestamp
+    WHERE seq =${num//\'/''} AND ssid =${SID//\'/''}
+   ;"
+ }
+
+## Color manpages
+man() {
+ LESS_TERMCAP_md=$'\e[01;31m' \
+ LESS_TERMCAP_me=$'\e[0m' \
+ LESS_TERMCAP_se=$'\e[0m' \
+ LESS_TERMCAP_so=$'\e[01;44;33m' \
+ LESS_TERMCAP_ue=$'\e[0m' \
+ LESS_TERMCAP_us=$'\e[01;32m' \
+ command man "$@"
+}
+
+#### Environment exports
+
+## With the prompt after the timestamp
+#PS1='`RETURN=$?; if [ $RETURN != 0 ]; then \
+PS1='`RETURN=$?; sqliteaddstop "$RETURN" 2>/dev/null ; if [ $RETURN != 0 ]; then \
+printf "\e[3m\e[2m\e[31m#!%03d\e[39m\e[49m" $RETURN ; else \
+printf "\e[3m\e[2m\e[39m#    \e[49m" ; fi ; \
+printf "\e[39m\e[12m[\D{%Y-%m-%d_%H:%M:%S}\e7\e[20C]\e[1m (\u@\h:\w)\e[22m\n\[\e[10m\e[3m\e[2m\]#\[\e[0m\] "`'
+
+# WARNING: for multiline prompts, \n must be outside the \[ \] non-printable indicator
+
+## PS0 is executed before the command
+#  WONTFIX: \033[u (RCP) is not supported by mosh,
+#  so instead use ESC 7 for RCP, ESC 8 for SCP
+
+## PROMPT_COMMAND is eval() before printing PS1
+
+## PS0 is executed right after the command, not before the display of the output
+# so it is not possible to know if the command may reach the bottom of the screen.
+# So instead of PS0, PROMPT_COMMAND check for the bottom and sets PS0 accordingly
+# when the output reaches the bottom:
+
+PROMPT_COMMAND='__notbottom && export PS0="\e8\r\e[0m\e[39m\e[2m\e[3m\e[5C\e[0m\e[20C\e[12m\e[2m\e[3m\D{,%Y-%m-%d_%H:%M:%S}\e[0m\e[2E" \
+                       || export PS0="\e8\e[2A\r\e[0m\e[39m\e[2m\e[3m\e[5C\e[0m\e[20C\e[12m\e[2m\e[3m\D{,%Y-%m-%d_%H:%M:%S}\e[0m\e[2E" ; \
+ printf "⏎%$((COLUMNS-1))s\\r\\033[K"'
+
+## WONTFIX: for the old msys2 in windows-terminal, off by 1:
+# [ TERM=="cygwin" ] && printf "⏎%$((COLUMNS-2))s\\r\\033[K" || printf "⏎%$((COLUMNS-1))s\\r\\033[K"'
+
+## NB: in windows-terminal, you can enable 24bit color by turning ANSI VT processing by default:
+# [HKEY_CURRENT_USER\Console]
+#"VirtualTerminalLevel"=dword:00000001
+
+CLICOLOR=yes
+GNUTERM="sixelgd size  1280,720 truecolor font arial 16"
+PAGER="less -iMSx4 -FX"
+LESS=-RX
+LS_OPTIONS='--color=auto'
+LANG=C.UTF-8
+LC_ALL=C.UTF-8
+export PS1 CLICOLOR GNUTERM PAGER LESS LS_OPTIONS LANG LC_ALL
+
+## Aliases
+alias sixel-test="echo 'G1BxIjE7MTs5MzsxNCMwOzI7NjA7MDswIzE7MjswOzY2OzAjMjsyOzU2OzYwOzAjMzsyOzQ3OzM4\nOzk3IzQ7Mjs3MjswOzY5IzU7MjswOzY2OzcyIzY7Mjs3Mjs3Mjs3MiM3OzI7MDswOzAjMCExMX4j\nMSExMn4jMiExMn4jMyExMn4jNCExMn4jNSExMn4jNiExMn4jNyExMH4tIzAhMTF+IzEhMTJ+IzIh\nMTJ+IzMhMTJ+IzQhMTJ+IzUhMTJ+IzYhMTJ+IzchMTB+LSMwITExQiMxITEyQiMyITEyQiMzITEy\nQiM0ITEyQiM1ITEyQiM2ITEyQiM3ITEwQhtc' | base64 -d"
+alias sixel-test-tmux="sixel-test | __tmux_guard"
+alias n="nnn -JoUdeE"
+alias ll="ls -lhaF --time-style=long-iso --show-control-chars"
+alias l="ls -lhart --color --time-style=long-iso"
+alias d="ls --color"
+
+## msys2
+#alias ifconfig="/c/Windows/System32/ipconfig.exe | grep [0-9][\.:]|grep '^ '"
+#alias lsix="PATH=$PATH:/mingw64/bin ~/bin/lsix"
+#alias adb=~/bin/adb.sh
+#alias mlterm="~/bin/mlterm -u=true"
+#alias dig="/usr/local/win64/dig"
+#alias traceroute="/c/Windows/system32/TRACERT"
+#alias ping="/c/Windows/System32/ping"
+#alias gnuplot="/c/msys64/mingw64/bin/gnuplot"
+#alias lf="winpty /usr/local/win64/lf.exe"
+
+## Record all output to a file?
+# if the parent process doesn't have script, start it not quietly (no -q)
+# WONTFIX: for MacOSX, replace script -f by script -F
+# cf https://unix.stackexchange.com/questions/25639/how-to-automatically-record-all-your-terminal-sessions-with-script-utility
+
+#(ps -p $PPID | grep script) || (script -a -f $HOME/.bash_record_$(date +"%Y-%m-%d_%H-%M-%S")_$RANDOM.log)
+
+## Source global definitions
+#if [ -f /etc/bashrc ]; then
+#        . /etc/bashrc
+#fi
