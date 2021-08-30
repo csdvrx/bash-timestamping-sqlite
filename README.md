@@ -43,7 +43,7 @@ I could easily confirm part of my hunch with my commit times, but I was lacking 
 
 Now, after accumulating data for 10 months, I can confirm the second part of my idea with actual data because I can clearly notice more shells errors using using a request like:
 
-``
+```{sql}
  select m, case when (h+6)%24 >=0 then (h+6)%24 else (h+6)%24-24 end as localtime,
          case when ok is null or ko is null then "N/A" else printf("%.2f", 1.0*sum(ok)/(sum(ok)+sum
 (ko))) end as success
@@ -54,10 +54,10 @@ Now, after accumulating data for 10 months, I can confirm the second part of my 
                  case when err=0 then 1 else 0 end as ok
           from commands where err != 130
          ) as sub1 group by 1 order by 1,2;
-``
+```
 
 After a copy-paste of this code into sqlite3 ~/.bash_history-$HOST.db I get a result like:
-```
+```{txt}
 0|0.88
 1|0.87
 2|0.82
@@ -85,7 +85,8 @@ After a copy-paste of this code into sqlite3 ~/.bash_history-$HOST.db I get a re
 ```
 
 This is hard to read, so I can do the same request per hour and per month, while also pivoting the lines to fit everything in the screen:
-``
+
+```{sql}
 select m,
        sum(case when localtime is 0 then success else '' end) as "00",
        sum(case when localtime is 1 then success else '' end) as "1a",
@@ -123,7 +124,7 @@ select m,
           from commands where err != 130
          ) as sub1 group by 1,2 order by 1,2
  ) as sub2 group by 1;
- ``
+```
 
 The same dips in success rate are generally present around 8-9am and 2pm.  For some months, there is not a single entry for both 3pm and 4pm: this is not a mistake in the simple modulo arithmetics formula I use to convert from UTC to EST - it's just that I usually don't work at these times!
 
@@ -132,7 +133,8 @@ Of course, a proper confirmation would require statistical tests, but this is be
 Another simple example: I like to optimize the commands I type the most. What are the commands you type the most? You may be able to get that information from your .bash_history, but can you do this by month?
 
 Here's how I can get the top 5 commands of the last 10 months:
-``
+
+```{sql}
 -- cheap pivot using aggregating functions
 select ym,
        sum(case when top=1 then cmd end) as first,
@@ -160,7 +162,7 @@ select ym,
                 ) as sub1
     group by 1, 2 order by 1,3 desc) as sub2
   ) as sub3 where top<6 group by ym;
-``
+```
 
 ![top 5 bash commands per month](https://raw.githubusercontent.com/csdvrx/bash-timestamping-sqlite/master/top5-per-month.png)
 
