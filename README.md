@@ -13,7 +13,7 @@ My email address is these 5 letters followed by @outlook.com
 
 ## Example
 
-![demo of the interactive features](https://raw.githubusercontent.com/csdvrx/bash-timestamping-sqlite/master/bash-timestamp.gif)
+![demo of the interactive features](https://raw.githubusercontent.com/csdvrx/bash-timestamping-sqlite/master/bash-timestamping.gif)
 
 ## What is it?
 
