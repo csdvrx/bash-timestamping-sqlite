@@ -13,7 +13,7 @@ My email address is these 5 letters followed by @outlook.com
 
 ## Example
 
-![demo of the interactive features](https://raw.githubusercontent.com/csdvrx/bash-timestamping-sqlite/master/bash-timestamp.gif)
+![demo of the interactive features](https://raw.githubusercontent.com/csdvrx/bash-timestamping-sqlite/main/bash-timestamping.gif)
 
 ## What is it?
 
@@ -318,7 +318,7 @@ If you prefer an automatic recording of all your sessions, simply uncomment the 
 
 If you want an even fancier prompt that goes way beyond what oh-my-zsh and the likes can do, [check out ble.sh: it is the ideal companion of this project](https://github.com/akinomyoga/ble.sh).
 
-If you want to not just copy-paste things but understand how it all works under the hood, the [logging of bash command history to sqlite](sqlite-logging-bash-history.Rmd) and the use of ANSI attributes for [visually timestamping bash commands](bash-commands-timestamping.md) are explained separately in great details. You should read them.
+If you want to not just copy-paste things but understand how it all works under the hood, the [logging of bash command history to sqlite](sqlite-logging-bash-history.md) and the use of ANSI attributes for [visually timestamping bash commands](bash-commands-timestamping.md) are explained separately in great details. You should read them.
 
 ### Major design limitation: not tamper-proof
 
