@@ -1,4 +1,4 @@
-# ~/.bash_login: executed by bash(1) for login shells.
+# ~/.bash_profile: executed by bash(1) for login shells.
 
 ## Long/Short hostname: the distiction is not available on windows
 if [ -z "$MINGW_CHOST" && -z "$MSYSTEM" ] ; then
@@ -28,8 +28,8 @@ export SQLITEFILE
 CREATE TABLE IF NOT EXISTS sessions ( -- table of the session, pk unique for host+time
 sid INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
 login TIMESTAMP NOT NULL DEFAULT current_timestamp,
-                                        -- bash_login timestamp
-logout TIMESTAMP NULL,                  -- bash_logout timestamp
+                                        -- bash login timestamp
+logout TIMESTAMP NULL,                  -- bash logout timestamp
 user TEXT,                              -- username to merge different databases later
 uname TEXT                              -- complete kernel version
 );

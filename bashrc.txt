@@ -54,8 +54,13 @@ function __notbottom() {
   local pos
   # Detect the cursor position
   IFS='[;' read -p $'\e[6n' -d R -a pos -rs || echo "failed with error: $? ; ${pos[*]}"
-  # add one to the 0-initiated x-pos (+ no offset), to give an error code at the bottom
-  CURLN=$((${pos[1]} +1 ))
+  if [ -z $1 ] ; then
+  ## add one to the 0-initiated x-pos (+ no offset), to give an error code at the bottom
+    CURLN=$((${pos[1]} +1 ))
+  else
+  ## same but add the parameter as well, for the comparison that follows
+    CURLN=$((${pos[1]} +1 +$1 ))
+  fi
   if [ "$CURLN" -ge "$LINES" ] ; then return -1 ; fi
 }
 
@@ -110,6 +115,39 @@ function sqliteaddstop {
     WHERE seq =${num//\'/''} AND ssid =${SID//\'/''}
    ;"
  }
+
+
+## SQLite search
+# map ^R to the custom search using sqlite and fzy on current path
+bind -x '"\C-r": sqlitehistorysearchpath'
+# map ^T to the custom search using sqlite and fzy on everything
+bind -x '"\C-t": sqlitehistorysearch'
+
+# SQLite searching and logging
+function sqlitehistorysearch { # Ctrl-T
+  # First, check if we are within 20 lines off the bottom that will be used by
+  # fzy to display completion entries, and cause it to scroll the display
+  __notbottom 20 || export overwritecursorposition=y
+  # With no argument, blind search, just based on date
+  [[ -z $READLINE_LINE ]] && INITSEARCH="" || INITSEARCH="--query=$READLINE_LINE"
+  selected=`sqlite3 ~/.bash_history-$HOST.db "select distinct what from commands where err=0 order by stop desc limit 10000;" | fzy -l 20 $INITSEARCH`
+  # With argument, change bash prompt and jump to the entry end
+  [[ -n "$selected" ]] && export READLINE_LINE="$selected" && READLINE_POINT=${#READLINE_LINE}
+  # And if fzy caused a scroll, do a SCP up there to overwrite the RCP at the bottom
+  [[ -n "$overwritecursorposition" ]] && echo "\e[1A\e7" && unset overwritecursorposition     }
+
+function sqlitehistorysearchpath { # Ctrl-R
+  # First, check if we are within 20 lines off the bottom that will be used by
+  # fzy to display completion entries, and cause it to scroll the display
+  __notbottom 20 || export overwritecursorposition=y
+  # With no argument, blind search, just based on path and date
+  [[ -z $READLINE_LINE ]] && INITSEARCH="" || INITSEARCH="--query=$READLINE_LINE"
+  selected=`sqlite3 ~/.bash_history-$HOST.db "select distinct what from commands where err=0 and path is \"$PWD\" order by stop desc limit 10000;" | fzy -l 20 $INITSEARCH`
+  # With argument, change bash prompt and jump to the entry end
+  [[ -n "$selected" ]] && export READLINE_LINE="$selected" && READLINE_POINT=${#READLINE_LINE}
+  # And if fzy caused a scroll, do a SCP up there to overwrite the RCP at the bottom
+  [[ -n "$overwritecursorposition" ]] && echo "\e[1A\e7" && unset overwritecursorposition     
+}
 
 ## Color manpages
 man() {
@@ -180,7 +218,7 @@ alias d="ls --color"
 #alias dig="/usr/local/win64/dig"
 #alias traceroute="/c/Windows/system32/TRACERT"
 #alias ping="/c/Windows/System32/ping"
-#alias gnuplot="/c/msys64/mingw64/bin/gnuplot"
+#alias gnuplot='/c/Program\ Files/gnuplot/bin/gnuplot'
 #alias lf="winpty /usr/local/win64/lf.exe"
 
 ## Record all output to a file?

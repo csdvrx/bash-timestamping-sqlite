@@ -1,27 +1,189 @@
-> bash commandline timestamping with frictionless saving to a sqlite database
+> bash commandline timestamping using a sqlite database for personal analytics, activity logging and auditing
 
 ## License
 
-Copyright (c) by CS DVRX, 2020 - data consutant
+Copyright (c) by CS DVRX, 2020,2021 - a data consultant who prefers to remain pseudonymous :)
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
 the Free Software Foundation; either version 3 of the License, or
 (at your option) any later version.
 
-My email address is these 5 letters except the S followed by @outlook.com
+My email address is these 5 letters followed by @outlook.com
 
-## Demo
+## Example
 
-![gif](https://raw.githubusercontent.com/csdvrx/bash-timestamping-sqlite/master/bash_timestamp.gif)
+![demo of the interactive features](https://raw.githubusercontent.com/csdvrx/bash-timestamping-sqlite/master/bash-timestamp.gif)
 
-Done with ttyrec then converted to gif with seq2gif or ttyrec2gif
+## What is it?
+
+I have replaced my bash history by a sqlite based backend, fed by pure bash functions, and read using a mix of fzy (for the interactive UI) or shell-scripts (for the analytics) sometimes using gnuplot (for the graphs).
+
+It also comes with eye-candy changes to your prompt that will show you the timestamp of the commands you type, along with the eventual error code they return.
+
+## Why use it?
+
+There are 2 typical use-cases:
+
+ - If you work in an industry where keeping logs of what was done, and by who, matters a lot,
+
+ - If you are into personal analytics, and want to focus your improvements on the pain points.
+
+Fortunately, I'm into both :) Also, I believe [you need benchmarks](https://danluu.com/why-benchmark/) to understand, validate and improve, even if I may not be [as obsessive about that as some people](https://www.technologyreview.com/2013/05/08/178528/stephen-wolfram-on-personal-analytics/).
+
+Even if you don't work in a sensitive field, when was the last time you scrolled in your shell history and couldn't remember when you had started this command, or how long did that long batch process take? The prompt changes solve these issues, by putting forward such informations.
+
+My approach goes further by saving it all into a database: that gives you the power of personal analytics. It is quite unique, especially if you spend most of your time using command-line tools: you will get far more actionable data!
+
+## What to do with more data?
+
+Let's start with a simple example: I rarely schedule important work in the beginning of the day, or in the early afternoon. This is because, in my experience, I am the most creative at these times: I will try various new approaches, some of which may work and yield large gains, while most will fail.
+
+I could easily confirm part of my hunch with my commit times, but I was lacking data on the failures. Then I started working on this project: while initially I was planning to solve a much more mundane issue, I quickly realized what collecting all this data could do, and started doing some small changes to extend the scope of the project.
+
+Now, after accumulating data for 10 months, I can confirm the second part of my idea with actual data because I can clearly notice more shells errors using using a request like:
+
+``
+ select m, case when (h+6)%24 >=0 then (h+6)%24 else (h+6)%24-24 end as localtime,
+         case when ok is null or ko is null then "N/A" else printf("%.2f", 1.0*sum(ok)/(sum(ok)+sum
+(ko))) end as success
+         from (
+          select strftime ('%m', stop) as m,
+                 strftime ('%H', stop) as h,
+                 case when err>1 then 1 else 0 end as ko,
+                 case when err=0 then 1 else 0 end as ok
+          from commands where err != 130
+         ) as sub1 group by 1 order by 1,2;
+``
+
+After a copy-paste of this code into sqlite3 ~/.bash_history-$HOST.db I get a result like:
+```
+0|0.88
+1|0.87
+2|0.82
+3|0.86
+4|0.85
+5|0.88
+6|0.87
+7|0.92
+8|0.73
+9|0.90
+10|0.85
+11|0.88
+12|0.76
+13|0.92
+14|0.36
+15|0.77
+16|0.85
+17|0.77
+18|0.88
+19|0.81
+20|0.83
+21|0.92
+22|0.81
+23|0.82
+```
+
+This is hard to read, so I can do the same request per hour and per month, while also pivoting the lines to fit everything in the screen:
+``
+select m,
+       sum(case when localtime is 0 then success else '' end) as "00",
+       sum(case when localtime is 1 then success else '' end) as "1a",
+       sum(case when localtime is 2 then success else '' end) as "2a",
+       sum(case when localtime is 3 then success else '' end) as "3a",
+       sum(case when localtime is 4 then success else '' end) as "4a",
+       sum(case when localtime is 5 then success else '' end) as "5a",
+       sum(case when localtime is 6 then success else '' end) as "6a",
+       sum(case when localtime is 7 then success else '' end) as "7a",
+       sum(case when localtime is 8 then success else '' end) as "8a",
+       sum(case when localtime is 9 then success else '' end) as "9a",
+       sum(case when localtime is 10 then success else '' end) as "10a",
+       sum(case when localtime is 11 then success else '' end) as "11a",
+       sum(case when localtime is 12 then success else '' end) as "12",
+       sum(case when localtime is 13 then success else '' end) as "1p",
+       sum(case when localtime is 14 then success else '' end) as "2p",
+       sum(case when localtime is 15 then success else '' end) as "3p",
+       sum(case when localtime is 16 then success else '' end) as "4p",
+       sum(case when localtime is 17 then success else '' end) as "5p",
+       sum(case when localtime is 18 then success else '' end) as "6p",
+       sum(case when localtime is 19 then success else '' end) as "7p",
+       sum(case when localtime is 20 then success else '' end) as "8p",
+       sum(case when localtime is 21 then success else '' end) as "9p",
+       sum(case when localtime is 22 then success else '' end) as "10p",
+       sum(case when localtime is 23 then success else '' end) as "11p"
+       from (
+         select m, case when (h+6)%24 >=0 then (h+6)%24 else (h+6)%24-24 end as localtime,
+         case when ok is null or ko is null then "N/A" else printf("%.2f", 1.0*sum(ok)/(sum(ok)+sum
+(ko))) end as success
+         from (
+          select strftime ('%m', stop) as m,
+                 strftime ('%H', stop) as h,
+                 case when err>1 then 1 else 0 end as ko,
+                 case when err=0 then 1 else 0 end as ok
+          from commands where err != 130
+         ) as sub1 group by 1,2 order by 1,2
+ ) as sub2 group by 1;
+ ``
+
+The same dips in success rate are generally present around 8-9am and 2pm.  For some months, there is not a single entry for both 3pm and 4pm: this is not a mistake in the simple modulo arithmetics formula I use to convert from UTC to EST - it's just that I usually don't work at these times!
+
+Of course, a proper confirmation would require statistical tests, but this is beyond the scope of this quick introduction.
+
+Another simple example: I like to optimize the commands I type the most. What are the commands you type the most? You may be able to get that information from your .bash_history, but can you do this by month?
+
+Here's how I can get the top 5 commands of the last 10 months:
+``
+-- cheap pivot using aggregating functions
+select ym,
+       sum(case when top=1 then cmd end) as first,
+       sum(case when top=2 then cmd end) as second,
+       sum(case when top=3 then cmd end) as third,
+       sum(case when top=4 then cmd end) as fourth,
+       sum(case when top=5 then cmd end) as fifth
+       from (
+  select ym, cmd,
+       -- popularity rank of the cmd per month
+       rank() over (partition by ym order by nbr desc, cmd) as top from (
+    select ym,
+           -- TODO: remove the optional .exe
+           -- split path: keep the last element like c in /a/b/c
+           replace(firstword, rtrim(firstword, replace(firstword, '/', '')),'') as cmd,
+           count(*) as nbr from (
+                select strftime ('%Y-%m', stop) as ym,
+                   -- split words: keep the first thing before a space
+                   substr(trim(what),1,instr(trim(what)||' ',' ')-1) as firstword
+                   from commands where err=0
+        -- TOOD: remove at least local variables before, and maybe backticks too
+        -- like: CFLAGS="-g" make #comment here
+        -- test with:
+        --and what not like '%=%'
+                ) as sub1
+    group by 1, 2 order by 1,3 desc) as sub2
+  ) as sub3 where top<6 group by ym;
+``
+
+![top 5 bash commands per month](https://raw.githubusercontent.com/csdvrx/bash-timestamping-sqlite/master/top5-per-month.png)
+
+By my high use of oathtool in June, you can infer I started a different position which required configuring (and accessing) many 2FA services, with far less network related activity that right before as ssh, scp, ping, ifconfig were more important in February-May. However, ping has made a comeback in August due to my experiments with multiple ISPs to better work from home!
+
+This is the kind of interesting insights you can get from personal analytics.  I have also included some of the analytics scripts I use, like with a gnuplot output.
+
+To do more, you will have to write your own SQL queries and scripts.
+
+I have started using JetBrains Datagrip to write my SQL code, which looks nice:
+![sql code inside datagrip](https://raw.githubusercontent.com/csdvrx/bash-timestamping-sqlite/master/sql-code-inside-datagrip.png)
+
+You can get the exact same results from your shell. If you prefer to do anything and everything in the shell, I recommend litecli to write queries in a frienly CLI environment.
 
 ## Installation
 
-Add the content of bashrc.txt to your bashrc, the content of bash_login.txt to your .bash_login, and bash_logout to your .bash_logout ; if you don't like my bashrc defaults, add at least to your bashrc:
+Add the content of bashrc.txt to your bashrc, the content of bash_profile.txt to your .bash_profile, and bash_logout to your .bash_logout.
 
-### For visual timestamping
+If you don't have a .bash_profile but use a .bash_login instead, considering renaming the file to .bash_profile. [The order does matter](https://www.thegeekstuff.com/2008/10/execution-sequence-for-bash_profile-bashrc-bash_login-profile-and-bash_logout/) but it will make your setup more portable: out-of-the-box, a new msys2+mintty install ignored .bash_login.
+
+If you don't like my bashrc defaults, add at least to your bashrc:
+
+### For visual timestamping only:
 
 ```{text}
 shopt -s checkwinsize
@@ -41,16 +203,54 @@ printf "\e[39m\e[12m[\D{%Y-%m-%d_%H:%M:%S}\e7\e[20C]\e[1m (\u@\h:\w)\e[22m\n\[\e
 PROMPT_COMMAND='__notbottom && export PS0="\e8\r\e[0m\e[39m\e[2m\e[3m\e[5C\e[0m\e[20C\e[12m\e[2m\e[3m\D{,%Y-%m-%d_%H:%M:%S}\e[0m\e[2E" \
                        || export PS0="\e8\e[2A\r\e[0m\e[39m\e[2m\e[3m\e[5C\e[0m\e[20C\e[12m\e[2m\e[3m\D{,%Y-%m-%d_%H:%M:%S}\e[0m\e[2E" ; \
  printf "⏎%$((COLUMNS-1))s\\r\\033[K"'
+````
 
 ### For SQLite timestamping only:
 
+
 ```{text}
+# If you really don't want a fancy shell, just use:
+#PS1='`RETURN=$?; sqliteaddstop "$RETURN" 2>/dev/null ; printf "# "`'
+
+# Otherwise:
 PS1='`RETURN=$?; sqliteaddstop "$RETURN" 2>/dev/null ; if [ $RETURN != 0 ]; then \
 printf "\e[3m\e[2m\e[31m#!%03d\e[39m\e[49m" $RETURN ; else \
 printf "\e[3m\e[2m\e[39m#    \e[49m" ; fi ; \
 printf "\e[39m\e[12m[\D{%Y-%m-%d_%H:%M:%S}\e7\e[20C]\e[1m (\u@\h:\w)\e[22m\n\[\e[10m\e[3m\e[2m\]#\[\e[0m\] "`'
 
-## SQLite logging
+## SQLite search
+# map ^R to the custom search using sqlite and fzy on current path
+bind -x '"\C-r": sqlitehistorysearchpath'
+# map ^T to the custom search using sqlite and fzy on everything
+bind -x '"\C-t": sqlitehistorysearch'
+
+# SQLite searching and logging
+function sqlitehistorysearch { # Ctrl-T
+  # First, check if we are within 20 lines off the bottom that will be used by
+  # fzy to display completion entries, and cause it to scroll the display
+  __notbottom 20 || export overwritecursorposition=y
+  # With no argument, blind search, just based on date
+  [[ -z $READLINE_LINE ]] && INITSEARCH="" || INITSEARCH="--query=$READLINE_LINE"
+  selected=`sqlite3 ~/.bash_history-$HOST.db "select distinct what from commands where err=0 order by stop desc limit 10000;" | fzy -l 20 $INITSEARCH`
+  # With argument, change bash prompt and jump to the entry end
+  [[ -n "$selected" ]] && export READLINE_LINE="$selected" && READLINE_POINT=${#READLINE_LINE}
+  # And if fzy caused a scroll, do a SCP up there to overwrite the RCP at the bottom
+  [[ -n "$overwritecursorposition" ]] && echo "\e[1A\e7" && unset overwritecursorposition     }
+
+function sqlitehistorysearchpath { # Ctrl-R
+  # First, check if we are within 20 lines off the bottom that will be used by
+  # fzy to display completion entries, and cause it to scroll the display
+  __notbottom 20 || export overwritecursorposition=y
+  # With no argument, blind search, just based on path and date
+  [[ -z $READLINE_LINE ]] && INITSEARCH="" || INITSEARCH="--query=$READLINE_LINE"
+  selected=`sqlite3 ~/.bash_history-$HOST.db "select distinct what from commands where err=0 and path is \"$PWD\" order by stop desc limit 10000;" | fzy -l 20 $INITSEARCH`
+  # With argument, change bash prompt and jump to the entry end
+  [[ -n "$selected" ]] && export READLINE_LINE="$selected" && READLINE_POINT=${#READLINE_LINE}
+  # And if fzy caused a scroll, do a SCP up there to overwrite the RCP at the bottom
+  [[ -n "$overwritecursorposition" ]] && echo "\e[1A\e7" && unset overwritecursorposition     
+}
+
+# SQLite logging
 function sqliteaddstart {
   [[ $BASH_COMMAND =~ "^logout$" ]] && return
   local numandwhat="$(history 1)"
@@ -86,7 +286,7 @@ function sqliteaddstop {
 
 inputrc.txt is included only as a suggestion for nice key mapping defaults, such as navigating on the prompt using control-arrows like on Windows.
 
-If you don't like my defaults, I suggest using at least the following in your .inputrc:
+If you don't like my inutrc defaults either, I suggest using at least the following in your .inputrc:
 
 ```{text}
 # Send & Receive 8 bit chars
@@ -102,7 +302,7 @@ set enable-bracketed-paste on
 set horizontal-scroll-mode on
 ```
 
-## Overview
+## Design overview and history
 
 This project started after realising that very often we forget when a very long file processing job was started.
 
@@ -112,231 +312,38 @@ While searching about that, I found a post about a [simple clock on the bash pro
 
 This proved an timestamped bash prompt was possible, but I really didn't like how any of that was done, so I reimplemented everything from scratch in a simpler way, that also does not depend on "shopt -s histverify" and other options which I really dislike.
 
-Now everything works fine, and session logs have become much more useful! If you are not familiar with session logs, start GNU screen, then type Ctrl-A H to start logging to a file, and again when you want to stop.
+Now everything works fine, and session logs have become much more useful! If you are not familiar with session logs, start GNU screen, then type Ctrl-A H to start logging to a file, and again when you want to stop. It is good practice to record your sessions when working with sensible systems.
 
 If you prefer an automatic recording of all your sessions, simply uncomment the script line in the proposed bashrc.txt.
 
-The logging of commands to [sqlite is explained separately](./sqlite.Rmd)
+If you want an even fancier prompt that goes way beyond what oh-my-zsh and the likes can do, [check out ble.sh: it is the ideal companion of this project](https://github.com/akinomyoga/ble.sh).
 
-## Concept
+If you want to not just copy-paste things but understand how it all works under the hood, the [logging of bash command history to sqlite](sqlite-logging-bash-history.md) and the use of ANSI attributes for [visually timestamping bash commands](bash-commands-timestamping.md) are explained separately in great details. You should read them.
 
-The initial idea was something looking like:
+### Major design limitation: not tamper-proof
 
-```{text}
-an eventual error code [timestamp of when input began, then of when enter was pressed] (a cute prompt) the command typed
-```
+A database is not the ideal tool if you want tamper-proof record-keeping: there's nothing preventing the records from being edited.
 
-After experiments, this felt a bit too cluttered, so the final result is a multiline prompt.
+I would not call that an issue, but more of a concern, or a design limitation that should not impact 99% of the users.
 
-This allows to also feature the username, the hostname and the current directory, all that without wasting any screen space for the commends:
+But if you want to fork and improve this, some food for your thoughts!
 
-```{text}
-# !eventual error code [timestamp of when input began, and when enter was pressed ] (user@host):/directory
-# command typed that can be very long but is more important than all the visual candy
-```
+ On remote hosts, to avoid giving intruder pointers to interesting things, you may want to set HISTFILESIZE=0 and only depend on the sqlite database for your history, ideally using some kind of password protection or decryption similar to how local password are protected before logging
 
-The two # instead of the usual $ is because I like to copy paste from my console, and I don't want to take the risk of having anything executed by accident!
+ If you don't protect the sqlite database, you rely on obscurity: you assumes in order of probability that the attack will be fully automated, or that an intruder will be a script-kiddie with a standard toolset, or if you have an actual human on the other side, that this person will not be familiar with sqlite, a risky bet at best. It may be better to either 1) copy and remove the database upon logout, or 2) encrypt additions to the database with a public key (so anyone can add but only you can read), ideally using some timestamp salting or a Merkle Tree (to avoid hackers hiding their tracks with replays)
 
-To compensate for the risk of confusion coming from a multiline prompt, the part where commands are typed is separated using visual attributes.
+Why do you need at least a cryptographic solution, and ideally a Merckle tree? If you use just a public key solution, tampered records will become evident. They could still be erased, even if that may stand out even more, as the commands table contain 'seq' that should be sequential, but at least the tampering can't be hidden.
 
-## Design
+Still, if you haven't taken additional protections, a malicious agent could simply reorder the sequential IDs after removing the "bad" entries to hide such malveolent commands: anything is possible with write access to the database!
 
-### Multiline
+Even worse: if there is no replay protection (like by salting with the timestamp and the sequential ID) the problematic entries could be overwritten! With no sequence dependance, nothing prevent the innucuous "ls" signed entry from overwriting the "problematic" entries showing data has been exfiltrated or that an attack has occured.
 
-The prompt is multiline to give you as much room as possible to type your commands. The only wasted-space luxury is a pound sign (aka hash sign, aka octhrope) on the newline.
+Another concern is what to do with the files if the sqlite db files are not kept locally but copied and deleted: they should be timestamped with at least the creation date (.bash_history-$hostname-$date.db), and eventually some random salt, in case multiple bash are started at the very same second.
 
-### Black-and-white
+On the remote server, the file should go to a specific directory, watched by a daemon, with the files moved to another directory, so a local intruder couldn't overwrite the database by uploading an empty file or using similar Denial-Of-Service inspired approaches. You should also be careful to make one directory per user, with quotas, for similar reasons.
 
-The use of colors is voluntarily kept to a minimum, since extremely colored prompts are often too distracting to me.
+These are the most obvious limitations I see in my approach, and there may be others, so think carefully before trusting this solution too much.
 
-The only color "luxury" is that the error code (if any) is in red, to quickly catch your attention, along with an exclam point to make it easy to parse your saved sessions if using minicom,
+Or just get in touch: I can do all the hard thinking for you and design the best solution for your specific needs!
 
-But everything you type yourself is in the default color, and likewise for the prompt, even if it will look different thanks to ANSI attributes: this will let you use various color themes on your terminal such as Solarized, without requiring any changes in the ANSI sequences code of your bashrc or any complex logic.
-
-### Typographic attributes
-
-Font changes are used instead of colors: thin, italic and bold can mimick different greytones.
-
-Visually, the part above the command typed is both in a thin font and italic, to avoid focusing on that instead of the command being type.
-
-The use of bold is mostly intended as a fallback: if your terminal supports neither thin nor italic, at least the user@host:/directory part will be bold so you know where you are!
-
-### Terminal support
-
-Ideally, your terminal should support thin, italic, bold and ANSI colors: you may have to export TERM to the right value, or edit your terminfo if your terminal support all, that yet you can't see any of it.
-
-Another nice thing to have is unicode output. To give an example of why, a small unicode trick is added to distinguish outputs that do not contain a newline, as can be done with echo -n something.
-
-```{text}
-# echo -n $TERM
-xterm-256color⏎
-# echo $TERM
-xterm-256color
-```
-
-Can you notice how there is a small difference? It's a very faint "carriage return" arrow at the end of the line, to tell us we may have forgotten something, but without cluttering the display.
-
-A fancier version could use a stroke combining character over a bolder arrow like ↵, but combining characters on symbols doesn't always work, and this faint arrow is far less obstructive.
-
-If you can't see anything special and the unicode output is garbled, consider using a modern terminal such as mintty or mlterm. This is because besides being pleasant to see, advanced console font typographics can help you visually WITHOUT distracting you from the console commands, unlike ANSI colors.
-
-If your terminal is only missing unicode, simply use a space instead: keeping the function that detects missing newlines will at least keep your prompt nice and clutter free!
-
-## Internal
-
-The magic on how this works is quite simple, but requires some explanations.
-
-There are basically 2 parts: PS1 and PS0.
-
-Everybody knows PS1 is for customizing the bash prompt. PS0 is somehow of a secret code, not even shown in the man page: this is because PS0 variable is relatively recent, having been introduced to Bash in 2016.
-
-Simply put, PS0 is expanded after the enter key is pressed but before the command is run, so it often used in fancy prompts to avoid the accumulation of colors.
-
-Let's look at PS1 and PS0 line-by-line.
-
-### PS1 : detect error codes, display timestamp, save cursor position, output eye candy
-
-#### Step 1: detect errors
-
-```{text}
-PS1='`RETURN=$?; if [ $RETURN != 0 ]; then \
-```
-
-The PS1 start with a backtick to detect if the last command gave an error
-
-```{text}
-printf "\e[3m\e[2m\e[31m#!%03d\e[39m\e[49m" $RETURN ; else \
-```
-
-First, we toggle italic with \e[3m and faint with \e[2m : the changes are cumulative.
-
-The \e means escape, [ starts the sequence, and m finishes it; if you want to learn more about these \e codes, check the [wikipedia page for ANSI escape codes)[https://en.wikipedia.org/wiki/ANSI_escape_code]
-
-In the case of an error, the color is switched to red and the error code shown: \e[31m switches the foreground (3) color to red.
-
-The error code is then printed in decimal, padded with zeroes to fit in 3 characters with %03d, after which the foreground color is returned to normal with \e[39m.
-
-The background color is also returned to default, with \e[49m: this part is not needed and therefore totally superfluous.
-
-It is included for your convenience only, should you want to customize colors, for example if you prefer say black text on a red background.
-
-If there was no error:
-
-```{text}
-printf "\e[3m\e[2m\e[39m#    \e[49m" ; fi ; \
-```
-
-The font attributes are similarly changed to italic and faint with \e[3m\e[2m, and \e[39m switches the foreground color to normal: this is more of a superfluous precaution, but I don't like bad surprises when I tweak colors.
-
-Instead of an error code, now 4 spaces are printed as a placeholder: this allows the timestamps to align nicely:
-
-As before, the background color is returned to normal with \e[49m - another precaution.
-
-#### Step 2: output the timestamp
-
-```{text}
-printf "\e[39m\e[12m[\D{%Y-%m-%d_%H:%M:%S}\e7\e[20C]\e[1m (\u@\h:\w)\e[22m\n\[\e[10m\e[3m\e[2m\]#\[\e[0m\] "`'
-```
-
-We start by changing the foreground color to normal with \e[39m, as another precaution, before switching the font before the timestamp with \e[12m : on mintty, this [selects a nice thin](https://github.com/mintty/mintty/wiki/Tips#text-attributes-and-rendering) font.
-
-Then, the timestamp of the beginning of input is displayed inside brackets, using the ISO format YmdHMS with pretty separator: \D followed by curly braces let bash know this is a date-time specification.
-
-\e7 saves the position of the cursor, since once the command is executed we will want to complete the "begin" timestamp with an "end" timestamp.
-
-\e[20C advances by 20 characters to create a placeholder for the end timestamp, after which ] closes the timestamp braket.
-
-To know where we are, \e[1m switches the font to bold before outputting the username \u, the hostname with \h, and the curent path with \w all inside parenthesis to make it pretty.
-
-\e[22m disables both bold and faint, then a newline is printed: this makes the prompt a multiline prompt, which allows you to have more room to type.
-
-After the newline, \\[ signifies to bash the output is not printable until it sees a \\]: this is to avoid creating unnecessary line wraps
-
-Ffor both pound signs to have matching a shape and color, we go back to the primary font with \e[10m, toggle italic with 3 and faint with 2, then say with \\] the output is now printable
-
-We can now print the leading pound sign with the correct font attributes, after which we have another non printable sequence turning all attributes off with \e[0m, then finally a space
-
-### PS0
-
-Here, PS0 is necessary to complete the timestamp with the time at which you press on enter.
-
-However, PS0 is very limited and can't be used as such as we need 2 different version depending on where on the screen the cursor is. Instead, PROMPT_COMMAND is used to set the PS0 to the right thing.
-
-### PROMPT_COMMAND
-
-PROMPT_COMMAND is evaluated before printing PS1.
-
-It is the perfect mix with PS0: here, PROMPT_COMMAND is used to detect if the bottom of the screen is reached, in which case a slightly different PS0 will be used to adjust for that
-
-Inside PROMPT_COMMAND, a notbottom function is used to detect the bottom of the screen: the precise position is read by querying the terminal.
-
-This can be done using escape codes:
-
-```{text}
-# printf '\e[6n'
-^[[3;1R^[[3;8R⏎
-```
-
-The coordinates are between the semicolon and R: they are read into an array, and one is added to the X coordinate.
-
-This is only used for debugging, so the code could be shorter, but this is a neglictible overhead, and I find it much better to have a reusable function also giving me the $CURLN variable I can use wherever.
-
-The code below is pretty self explainatory; the only candy is a sanity check in case the position read goes beyond the known screen geometry.
-
-```{text}
-# Detect the bottom of the screen without stty, read with -s to avoid displaying
-function __notbottom() {
-  local pos
-  ## Detect the cursor position
-  IFS='[;' read -p $'\e[6n' -d R -a pos -rs || echo "failed with error: $? ; ${pos[*]}"
-  ## add one to the 0-initiated x-pos (+ no offset)
-  CURLN=$((${pos[1]} +1 ))
-  if [ "$CURLN" -ge "$LINES" ] ; then return -1 ; fi
-}
-```
-
-We can now start analyzing the PROMPT_COMMAND:
-
-```{text}
-PROMPT_COMMAND='__notbottom && export PS0="\e8\r\e[0m\e[39m\e[2m\e[3m\e[5C\e[0m\e[20C\e[12m\e[2m\e[3m\e[12m\D{,%Y-%m-%d_%H:%M:%S}\e[0m\e[2E" \
-```
-
-If the bottom of the screen has not been reached, \e8 restores the cursor position ; an alternative to \e8 would be \033[u but this RCP is not supported by mosh - so we stick with what will work on most setups.
-
-The carriage return \r returns to the beginning of the line, where we apply the same sequence as before to get the font to the same state, as we can't know which font is being used - well, we might find a way to query the terminal but that would be too complicated, it's simpler to return to a default state!
-
-First, \e[0m returns the font to normal, and \e[39m likewise switches the foreground to normal, after which we toggle faint and italic.
-
-Then, we advance forward by 5 characters with \e\5C to leave either the error code or the placeholder as is - we then toggle off all font attributes with \e[0m, after which we advance by 20 characters with \e[20C to leave the beginning timestamp as such.
-
-We can finally output the ending timestap: \e[12 switches to the alternative font (since we returned to a "known good" default state), \e[2m\e[3m toggle faint and italic, and we output the iso date after which we can return the font attribute to normal with \e[0m and move the cursor 2 lines below
-
-```{text}
-                       || export PS0="\e8\e[2A\r\e[0m\e[39m\e[2m\e[3m\e[5C\e[0m\e[20C\e[12m\e[2m\e[3m\D{,%Y-%m-%d_%H:%M:%S}\e[0m\e[2E" ; \
-```
-
-If we have reached the screen bottom, we do the same thing except right after restoring the cursor position with \e8, we move the cursor up twice with \e[2A
-
-Some more advanced state logic could be used, but repeating everything and keeping all the ANSI on one line adds very little overhead while making the code far easier to understand.
-
-The next part is tricker:
-
-```{text}
-printf "⏎%$((COLUMNS-1))s\\r\\033[K"'
-```
-
-The COLUMN decreased by 1 is a simple trick from https://www.vidarholen.net/contents/blog/?p=878 and discussed on https://news.ycombinator.com/item?id=23520240 : the output is padded with COLUMNS-1 spaces, followed by a carriage return \r to move to the first column, and \e[K to erase from the cursor to the end of the line.
-
-### TODO
-
-#### Completions
-
-Tab completions and interruptions (such as with SIGINT) are not handled, but I believe interruptions do not need a redundant timestamp: they show up as an error 130
-
-It should be possible to trap completion attempts to clear the saved line with something like:
-
-```{text}
-PS0="`if [ $COMP_LINE ] ; printf "\e8\e[2K"; fi`"
-```
-However, I find the current functionality sufficient - so submit a patch if you want the feature included.
-
+After all, I'm a consultant :)
