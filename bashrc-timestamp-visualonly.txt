@@ -4,7 +4,13 @@ shopt -s checkwinsize
 function __notbottom() {
   local pos
   IFS='[;' read -p $'\e[6n' -d R -a pos -rs || echo "failed with error: $? ; ${pos[*]}"
-  CURLN=$((${pos[1]} +1 ))
+  if [ -z $1 ] ; then
+  ## add one to the 0-initiated x-pos (+ no offset), to give an error code at the bottom
+    CURLN=$((${pos[1]} +1 ))
+  else
+  ## same but add the parameter as well, for the comparison that follows
+    CURLN=$((${pos[1]} +1 +$1 ))
+  fi
   if [ "$CURLN" -ge "$LINES" ] ; then return -1 ; fi
 }
 
